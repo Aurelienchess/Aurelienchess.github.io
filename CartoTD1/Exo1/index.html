@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Exercice Géolocalisation</title>
+</head>
+<body>
+<h2>Exercice 1 : Géolocalisation</h2>
+<button onclick="getPosition()">Obtenir position (getCurrentPosition)</button>
+<button onclick="watchPositionFunc()">Surveiller position (watchPosition)</button>
+
+<div id="info"></div>
+
+<script>
+function showPosition(position) {
+    const info = document.getElementById('info');
+    info.innerHTML = `
+        <p>Latitude : ${position.coords.latitude}</p>
+        <p>Longitude : ${position.coords.longitude}</p>
+        <p>Hauteur : ${position.coords.altitude ?? 'Non disponible'}</p>
+        <p>Précision : ${position.coords.accuracy} mètres</p>
+        <p>Vitesse : ${position.coords.speed ?? 'Non disponible'}</p>
+        <p>TimeStamp : ${new Date(position.timestamp).toLocaleString()}</p>
+    `;
+}
+
+function getPosition() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(showPosition, 
+            (err) => alert("Erreur de géolocalisation : " + err.message));
+    } else {
+        alert("Géolocalisation non supportée par ce navigateur");
+    }
+}
+
+let watchId;
+function watchPositionFunc() {
+    if (navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(showPosition, 
+            (err) => alert("Erreur de géolocalisation : " + err.message));
+    } else {
+        alert("Géolocalisation non supportée par ce navigateur");
+    }
+}
+</script>
+</body>
+</html>

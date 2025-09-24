@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Exercice Leaflet</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+#map { height: 500px; width: 100%; }
+</style>
+</head>
+<body>
+<h2>Exercice 2 : Leaflet</h2>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([43.7102, 7.2620], 13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+L.marker([43.7102, 7.2620]).addTo(map)
+    .bindPopup('Nice')
+    .openPopup();
+
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        L.marker([lat, lon], {title: "Ma position"})
+            .addTo(map)
+            .bindPopup('Vous êtes ici')
+            .openPopup();
+        map.setView([lat, lon], 13);
+    });
+}
+
+const bermudes = [
+    [25.774, -80.19],  
+    [18.466, -66.118],
+    [32.321, -64.757],
+    [25.774, -80.19] 
+];
+L.polyline(bermudes, {color: 'red'}).addTo(map);
+
+</script>
+</body>
+</html>
