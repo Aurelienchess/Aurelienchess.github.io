@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Babylon.js — Exercice 2</title>
+<style>
+html, body { margin:0; height:100%; overflow:hidden; background:#000; }
+canvas { width:100%; height:100%; display:block; }
+#info { position:absolute; top:10px; left:10px; color:#fff; font-family:sans-serif; z-index:10; }
+</style>
+</head>
+<body>
+<div id="info">Babylon.js — Exercice 2</div>
+<canvas id="renderCanvas"></canvas>
+
+<script src="https://cdn.babylonjs.com/babylon.max.js"></script>
+
+<script>
+const canvas = document.getElementById('renderCanvas');
+const engine = new BABYLON.Engine(canvas, true);
+const scene = new BABYLON.Scene(engine);
+
+scene.clearColor = new BABYLON.Color3(0.1,0.1,0.3);
+scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
+scene.fogDensity = 0.01;
+scene.fogColor = scene.clearColor;
+
+const camera = new BABYLON.ArcRotateCamera("Camera", -Math.PI/2, Math.PI/2.5, 12, BABYLON.Vector3.Zero(), scene);
+camera.attachControl(canvas,true);
+
+const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0,1,0), scene);
+light.intensity = 1;
+
+const ground = BABYLON.MeshBuilder.CreateGround("ground",{width:20,height:20},scene);
+const groundMat = new BABYLON.StandardMaterial("groundMat",scene);
+groundMat.diffuseColor = new BABYLON.Color3(0.1,0.1,0.1);
+ground.material = groundMat;
+
+const sphere = BABYLON.MeshBuilder.CreateSphere("sphere",{diameter:2},scene);
+const sphereMat = new BABYLON.StandardMaterial("sphereMat",scene);
+sphereMat.diffuseTexture = new BABYLON.Texture('https://playground.babylonjs.com/textures/earth.jpg',scene);
+sphere.material = sphereMat;
+sphere.position = new BABYLON.Vector3(-3,1,0);
+sphere.rotation.x = Math.PI;
+
+const cube = BABYLON.MeshBuilder.CreateBox("cube",{size:1},scene);
+const cubeMat = new BABYLON.StandardMaterial("cubeMat",scene);
+cubeMat.diffuseTexture = new BABYLON.Texture("https://playground.babylonjs.com/textures/wood.jpg",scene);
+cube.material = cubeMat;
+cube.position = new BABYLON.Vector3(3,1,0);
+
+BABYLON.SceneLoader.ImportMesh("", "https://playground.babylonjs.com/meshes/", "Suzanne.glb", scene, (meshes)=>{
+    const model = meshes[0];
+    model.position = new BABYLON.Vector3(0,1,0);
+    model.scaling = new BABYLON.Vector3(2,2,2);
+});
+
+const particleSystem = new BABYLON.ParticleSystem("particles",2000,scene);
+particleSystem.particleTexture = new BABYLON.Texture("https://playground.babylonjs.com/textures/flare.png",scene);
+particleSystem.emitter = new BABYLON.Vector3(0,10,0);
+particleSystem.minEmitBox = new BABYLON.Vector3(-10,0,-10);
+particleSystem.maxEmitBox = new BABYLON.Vector3(10,0,10);
+particleSystem.gravity = new BABYLON.Vector3(0,-9.81,0);
+particleSystem.minSize = 0.1;
+particleSystem.maxSize = 0.3;
+particleSystem.minLifeTime = 1;
+particleSystem.maxLifeTime = 2;
+particleSystem.emitRate = 500;
+particleSystem.start();
+
+if(window.DeviceOrientationEvent){
+    window.addEventListener("deviceorientation",(ev)=>{
+        const beta = ev.beta || 0;
+        const gamma = ev.gamma || 0;
+        sphere.rotation.x = BABYLON.Tools.ToRadians(beta);
+        sphere.rotation.z = BABYLON.Tools.ToRadians(gamma);
+    });
+}
+
+scene.registerBeforeRender(()=>{
+    sphere.rotation.y += 0.002;
+    cube.rotation.x += 0.01;
+    cube.rotation.y += 0.02;
+});
+
+engine.runRenderLoop(()=>scene.render());
+window.addEventListener('resize',()=>engine.resize());
+</script>
+</body>
+</html>
