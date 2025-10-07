@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TD3 : Terre + Géolocalisation + Drapeaux</title>
+<style>
+html,body { margin:0; height:100%; overflow:hidden; background:#000; }
+canvas { display:block; }
+#info { position: absolute; left:10px; top:10px; color:#fff; font-family:sans-serif; z-index:10; }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+
+<body>
+<div id="info">TD3 — Terre + Géolocalisation + Drapeaux</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 3);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const dir = new THREE.DirectionalLight(0xffffff, 1);
+dir.position.set(5,3,5);
+scene.add(dir);
+
+const texLoader = new THREE.TextureLoader();
+const earthTexture = texLoader.load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
+
+const earth = new THREE.Mesh(
+  new THREE.SphereGeometry(1,64,64),
+  new THREE.MeshPhongMaterial({ map: earthTexture })
+);
+scene.add(earth);
+
+const earthGroup = new THREE.Group();
+scene.add(earthGroup);
+earthGroup.add(earth);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+function latLonToVector3(lat, lon, radius = 1) {
+  const phi = (90 - lat) * (Math.PI / 180);
+  const theta = (lon + 180) * (Math.PI / 180);
+  const x = -radius * Math.sin(phi) * Math.cos(theta);
+  const z = radius * Math.sin(phi) * Math.sin(theta);
+  const y = radius * Math.cos(phi);
+  return new THREE.Vector3(x, y, z);
+}
+
+function createMarker(color = 0xff0000, size = 0.02) {
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(size, 16, 16),
+    new THREE.MeshBasicMaterial({ color })
+  );
+}
+
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition((pos) => {
+    const { latitude, longitude } = pos.coords;
+    const position = latLonToVector3(latitude, longitude, 1.01);
+    const marker = createMarker(0x00ff00);
+    marker.position.copy(position);
+    scene.add(marker);
+    console.log(`Position utilisateur : ${latitude}, ${longitude}`);
+  }, (err) => console.warn('Erreur géolocalisation:', err));
+}
+
+async function addCountryFlags() {
+  try {
+    const res = await fetch('https://restcountries.com/v3.1/all?fields=name,flags,latlng');
+    const countries = await res.json();
+    if (!Array.isArray(countries)) return;
+
+    const subset = countries.slice(0,20);
+    subset.forEach(c => {
+    if (!c.latlng || !c.flags || !c.flags.png) return;
+    const [lat, lon] = c.latlng;
+    const pos = latLonToVector3(lat, lon, 1.03);
+    const flagTex = texLoader.load(c.flags.png);
+    const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.12, 0.08),
+        new THREE.MeshBasicMaterial({ map: flagTex, transparent:true, depthTest:false })
+    );
+    plane.position.copy(pos);
+    // --- Drapeaux pays ---
+    subset.forEach(c => {
+        if (!c.latlng || !c.flags || !c.flags.png) return;
+        const [lat, lon] = c.latlng;
+        const pos = latLonToVector3(lat, lon, 1.03);
+        const flagTex = texLoader.load(c.flags.png);
+        const plane = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.12, 0.08),
+            new THREE.MeshBasicMaterial({ map: flagTex, transparent:true, side: THREE.FrontSide, depthTest:true })
+        );
+        plane.position.copy(pos);
+        plane.lookAt(pos.clone().multiplyScalar(2));
+        earthGroup.add(plane);
+    });
+
+    });
+
+  } catch(e) {
+    console.error('Erreur chargement des drapeaux:', e);
+  }
+}
+addCountryFlags();
+
+function animate() {
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
