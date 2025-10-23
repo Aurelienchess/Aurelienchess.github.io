@@ -5,21 +5,32 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Carte interactive pilotée par IA (ml5.poseNet)</title>
   <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body, html { height: 100%; margin: 0; font-family: Arial, Helvetica, sans-serif; }
     #map { height: 100vh; width: 100%; }
-    #ui { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 10px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    #ui { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 10px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); max-width: 300px; }
+    #videoPreview { position: absolute; bottom: 10px; right: 10px; width: 200px; height: 150px; z-index: 1001; border: 3px solid white; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.3); transform: scaleX(-1); }
     #videoHolder { display:none; }
     .row { margin-bottom:8px; }
     label { font-size: 0.9rem; }
     button { padding:6px 10px; border-radius:6px; border:1px solid #ccc; background:#f7f7f7; cursor:pointer; }
+    #desc { font-size: 0.85rem; color:#333; background:#f9f9f9; padding:6px; border-radius:6px; border:1px solid #ddd; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="ui">
     <div class="row"><strong>Carte interactive — contrôle par IA</strong></div>
+    <div id="desc" class="row">
+      Cette application affiche une carte interactive contrôlée par les mouvements de votre tête grâce à la caméra et au modèle d’intelligence artificielle <b>PoseNet</b> (via <b>ml5.js</b>).<br><br>
+      <ul style="margin:0; padding-left:15px;">
+        <li><b>Pan</b> : déplacez la tête vers la gauche/droite/haut/bas pour déplacer la carte.</li>
+        <li><b>Zoom</b> : levez ou baissez la tête pour zoomer ou dézoomer.</li>
+        <li>Utilisez <b>Calibrer</b> pour définir votre position neutre.</li>
+        <li>Ajustez la <b>sensibilité</b> selon votre confort.</li>
+      </ul>
+    </div>
     <div class="row">
       <button id="toggleBtn">Activer contrôle IA</button>
       <button id="calibBtn">Calibrer (position neutre)</button>
@@ -38,7 +49,8 @@
     <div class="row"><small>Autoriser la caméra et placez-vous face à l'appareil. Le contrôle utilise le point 'nose' détecté par poseNet.</small></div>
   </div>
 
-  <!-- video holder used by p5/ml5 -->
+  <!-- vidéo visible pour l’utilisateur -->
+  <video id="videoPreview" autoplay muted playsinline></video>
   <div id="videoHolder"></div>
 
   <!-- Librairies -->
@@ -48,125 +60,82 @@
   <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
 
   <script>
-  // ====== Variables globales ======
   let map;
-  let mapContainer;
   let aiEnabled = false;
-  let sensitivity = 0.6; // 0.1 - 1.5
-  let controlMode = 'pan'; // 'pan' or 'zoom'
-
-  // p5 + poseNet related
-  let video; // p5 capture
+  let sensitivity = 0.6;
+  let controlMode = 'pan';
+  let video;
   let poseNet;
   let latestPose = null;
-  let neutral = null; // calibration
+  let neutral = null;
   let smoothedNose = {x:0, y:0};
 
-  // ====== Leaflet initialisation ======
   function initMap() {
-    map = L.map('map').setView([48.8584, 2.2945], 13); // par défaut Tour Eiffel
+    map = L.map('map').setView([48.8584, 2.2945], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
-
-    // petite info
     L.marker([48.8584,2.2945]).addTo(map).bindPopup('Position de départ : Tour Eiffel').openPopup();
   }
 
-  // ====== p5 sketch pour la caméra et poseNet ======
   function setupP5() {
-    // crée un canvas p5 (invisible) et la capture vidéo
     const sketch = function(p) {
       p.setup = function() {
-        // video hidden inside #videoHolder so user can allow camera
         const vw = p.createCapture(p.VIDEO);
         vw.size(320, 240);
         vw.parent('videoHolder');
         vw.hide();
         video = vw;
-
-        // init poseNet
-        poseNet = ml5.poseNet(video, modelLoaded);
-        poseNet.on('pose', gotPoses);
+        // afficher la vidéo dans videoPreview (miroir)
+        navigator.mediaDevices.getUserMedia({video:true}).then(stream => {
+          document.getElementById('videoPreview').srcObject = stream;
+        });
+        poseNet = ml5.poseNet(video, ()=>console.log('poseNet prêt'));
+        poseNet.on('pose', poses => { if (poses && poses.length > 0) latestPose = poses[0].pose; });
       };
-
-      function modelLoaded() {
-        console.log('poseNet ready');
-      }
-
-      function gotPoses(poses) {
-        if (poses && poses.length > 0) {
-          latestPose = poses[0].pose;
-        }
-      }
     };
     new p5(sketch);
   }
 
-  // ====== contrôle de la carte ======
   function controlLoop() {
     if (!aiEnabled || !latestPose) return;
-
     const nose = latestPose.keypoints.find(k => k.part === 'nose');
     if (!nose || nose.score < 0.3) return;
-
-    // smoothing
     smoothedNose.x = smoothedNose.x * 0.85 + nose.position.x * 0.15;
     smoothedNose.y = smoothedNose.y * 0.85 + nose.position.y * 0.15;
-
     const vidW = video.width || 320;
     const vidH = video.height || 240;
-
-    // calibrate neutral if not set
-    if (!neutral) {
-      neutral = { x: vidW/2, y: vidH/2 };
-    }
+    if (!neutral) neutral = { x: vidW/2, y: vidH/2 };
 
     if (controlMode === 'pan') {
-      // compute offset from center
-      const dxNorm = (smoothedNose.x - neutral.x) / vidW; // -0.5 .. 0.5
+      const dxNorm = (smoothedNose.x - neutral.x) / vidW;
       const dyNorm = (smoothedNose.y - neutral.y) / vidH;
-
-      // convert to pixel pan amount (map container size)
       const mapSize = map.getSize();
-      const panX = dxNorm * mapSize.x * sensitivity * 0.8; // tweak factor
-      const panY = dyNorm * mapSize.y * sensitivity * 0.8;
-
-      // apply small pan (negative because moving head right should pan map left)
-      map.panBy([-panX, -panY], {animate: false});
-
+      const panX = -dxNorm * mapSize.x * sensitivity * 0.8; // inversé horizontalement (caméra miroir)
+      const panY = dyNorm * mapSize.y * sensitivity * 0.8; // non inversé verticalement
+      map.panBy([panX, panY], {animate: false});
     } else if (controlMode === 'zoom') {
-      // zoom by head height (y). Raise head -> zoom in; lower head -> zoom out
-      const yNorm = (smoothedNose.y - (vidH*0.25)) / (vidH*0.6); // roughly normalize
-      const targetZoom = 13 + (1 - yNorm) * 3 * sensitivity; // base 13
+      const yNorm = (smoothedNose.y - (vidH*0.25)) / (vidH*0.6);
+      const targetZoom = 13 + (yNorm - 1) * 3 * sensitivity * -1;
       const clamped = Math.max(2, Math.min(19, targetZoom));
       map.setView(map.getCenter(), clamped, {animate:false});
     }
   }
 
-  // ====== UI handlers ======
   function setupUI() {
     document.getElementById('toggleBtn').addEventListener('click', ()=>{
       aiEnabled = !aiEnabled;
       document.getElementById('toggleBtn').textContent = aiEnabled ? 'Désactiver contrôle IA' : 'Activer contrôle IA';
-      if (aiEnabled && !video) {
-        // démarrer p5 et poseNet au besoin
-        setupP5();
-      }
+      if (aiEnabled && !video) setupP5();
     });
-
-    document.getElementById('sens').addEventListener('input', (e)=>{
+    document.getElementById('sens').addEventListener('input', e=>{
       sensitivity = Number(e.target.value);
       document.getElementById('sensVal').textContent = sensitivity.toFixed(2);
     });
-
-    document.getElementById('mode').addEventListener('change', (e)=>{
-      controlMode = e.target.value;
-    });
-
+    document.getElementById('mode').addEventListener('change', e=>{ controlMode = e.target.value; });
     document.getElementById('calibBtn').addEventListener('click', ()=>{
-      if (!latestPose) return alert("Aucune pose détectée : activez la caméra et placez-vous face à l'appareil.");
+      if (!latestPose) return alert('Aucune pose détectée : activez la caméra et placez-vous face à l\'appareil.');
       const nose = latestPose.keypoints.find(k => k.part === 'nose');
       if (!nose) return alert('Nose non trouvé.');
       neutral = { x: nose.position.x, y: nose.position.y };
@@ -174,12 +143,9 @@
     });
   }
 
-  // ====== Démarrage ======
   window.addEventListener('load', ()=>{
     initMap();
     setupUI();
-
-    // boucle de contrôle à 15fps
     setInterval(controlLoop, 66);
   });
   </script>
