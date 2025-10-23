@@ -4,13 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Carte interactive pilotée par IA (ml5.poseNet)</title>
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body, html { height: 100%; margin: 0; font-family: Arial, Helvetica, sans-serif; }
     #map { height: 100vh; width: 100%; }
     #ui { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 10px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); max-width: 300px; }
-    #videoPreview { position: absolute; bottom: 10px; right: 10px; width: 200px; height: 150px; z-index: 1001; border: 3px solid white; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.3); transform: scaleX(-1); }
+    #videoContainer { position: absolute; bottom: 10px; right: 10px; width: 200px; height: 180px; z-index: 1001; display: flex; flex-direction: column; align-items: center; }
+    #arrowIndicator { font-size: 32px; margin-bottom: 4px; text-shadow: 0 0 8px white; }
+    #videoPreview { width: 200px; height: 150px; border: 3px solid white; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.3); transform: scaleX(-1); }
     #videoHolder { display:none; }
     .row { margin-bottom:8px; }
     label { font-size: 0.9rem; }
@@ -49,8 +50,11 @@
     <div class="row"><small>Autoriser la caméra et placez-vous face à l'appareil. Le contrôle utilise le point 'nose' détecté par poseNet.</small></div>
   </div>
 
-  <!-- vidéo visible pour l’utilisateur -->
-  <video id="videoPreview" autoplay muted playsinline></video>
+  <!-- vidéo + flèche -->
+  <div id="videoContainer">
+    <div id="arrowIndicator">⬍</div>
+    <video id="videoPreview" autoplay muted playsinline></video>
+  </div>
   <div id="videoHolder"></div>
 
   <!-- Librairies -->
@@ -69,6 +73,7 @@
   let latestPose = null;
   let neutral = null;
   let smoothedNose = {x:0, y:0};
+  let arrow = document.getElementById('arrowIndicator');
 
   function initMap() {
     map = L.map('map').setView([48.8584, 2.2945], 13);
@@ -87,7 +92,6 @@
         vw.parent('videoHolder');
         vw.hide();
         video = vw;
-        // afficher la vidéo dans videoPreview (miroir)
         navigator.mediaDevices.getUserMedia({video:true}).then(stream => {
           document.getElementById('videoPreview').srcObject = stream;
         });
@@ -96,6 +100,14 @@
       };
     };
     new p5(sketch);
+  }
+
+  function updateArrow(dx, dy, threshold = 0.05) {
+    let dir = '';
+    if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) dir = '⬍';
+    else if (Math.abs(dx) > Math.abs(dy)) dir = dx > 0 ? '⬅️' : '➡️';
+    else dir = dy > 0 ? '⬇️' : '⬆️';
+    arrow.textContent = dir;
   }
 
   function controlLoop() {
@@ -108,12 +120,14 @@
     const vidH = video.height || 240;
     if (!neutral) neutral = { x: vidW/2, y: vidH/2 };
 
+    const dxNorm = (smoothedNose.x - neutral.x) / vidW;
+    const dyNorm = (smoothedNose.y - neutral.y) / vidH;
+    updateArrow(dxNorm, dyNorm);
+
     if (controlMode === 'pan') {
-      const dxNorm = (smoothedNose.x - neutral.x) / vidW;
-      const dyNorm = (smoothedNose.y - neutral.y) / vidH;
       const mapSize = map.getSize();
       const panX = -dxNorm * mapSize.x * sensitivity * 0.8; // inversé horizontalement (caméra miroir)
-      const panY = dyNorm * mapSize.y * sensitivity * 0.8; // non inversé verticalement
+      const panY = dyNorm * mapSize.y * sensitivity * 0.8;  // non inversé verticalement
       map.panBy([panX, panY], {animate: false});
     } else if (controlMode === 'zoom') {
       const yNorm = (smoothedNose.y - (vidH*0.25)) / (vidH*0.6);
